@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Store, LogIn, Loader2 } from 'lucide-react';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from 'sonner';
 
-export default function AdminLoginPage() {
+function AdminLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAdmin, signIn, checkAuth, loading } = useAuthStore();
@@ -17,16 +17,22 @@ export default function AdminLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    const verify = async () => {
+      await checkAuth();
+      setChecked(true);
+    };
+    verify();
   }, [checkAuth]);
 
   useEffect(() => {
-    if (!loading && user && isAdmin) {
+    // Se já estiver logado como admin, redireciona
+    if (checked && !loading && user && isAdmin) {
       router.push('/admin/dashboard');
     }
-  }, [loading, user, isAdmin, router]);
+  }, [checked, loading, user, isAdmin, router]);
 
   useEffect(() => {
     const error = searchParams.get('error');
@@ -39,19 +45,25 @@ export default function AdminLoginPage() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    const { error } = await signIn(email, password);
+    try {
+      const { error } = await signIn(email, password);
 
-    if (error) {
-      toast.error(error);
+      if (error) {
+        toast.error(error);
+        setIsSubmitting(false);
+        return;
+      }
+
+      toast.success('Login realizado com sucesso!');
+      router.push('/admin/dashboard');
+    } catch (err) {
+      console.error('Login error:', err);
+      toast.error('Erro ao fazer login. Tente novamente.');
       setIsSubmitting(false);
-      return;
     }
-
-    toast.success('Login realizado com sucesso!');
-    router.push('/admin/dashboard');
   };
 
-  if (loading) {
+  if (loading || !checked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brazil-blue to-brazil-blue/80">
         <Loader2 className="w-12 h-12 animate-spin text-white" />
@@ -85,6 +97,7 @@ export default function AdminLoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={isSubmitting}
             />
             <Input
               label="Senha"
@@ -93,15 +106,16 @@ export default function AdminLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={isSubmitting}
             />
             <Button
               type="submit"
               className="w-full"
               size="lg"
-              isLoading={isSubmitting}
+              disabled={isSubmitting}
             >
               <LogIn className="w-5 h-5" />
-              Entrar
+              {isSubmitting ? 'Entrando...' : 'Entrar'}
             </Button>
           </form>
 
@@ -112,5 +126,19 @@ export default function AdminLoginPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brazil-blue to-brazil-blue/80">
+          <Loader2 className="w-12 h-12 animate-spin text-white" />
+        </div>
+      }
+    >
+      <AdminLoginContent />
+    </Suspense>
   );
 }

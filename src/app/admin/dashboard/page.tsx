@@ -21,67 +21,148 @@ import {
   BarChart,
   Bar
 } from 'recharts';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import type { Order } from '@/types/database';
 
-// Mock data for the charts
-const salesData = [
-  { name: 'Jan', vendas: 4000 },
-  { name: 'Fev', vendas: 3000 },
-  { name: 'Mar', vendas: 5000 },
-  { name: 'Abr', vendas: 4500 },
-  { name: 'Mai', vendas: 6000 },
-  { name: 'Jun', vendas: 5500 },
-  { name: 'Jul', vendas: 7000 },
-];
-
-const recentOrders = [
-  { id: '1', player: 'PixelMaster_BR', product: 'VIP Gold', value: 49.90, status: 'approved' },
-  { id: '2', player: 'DragonSlayer99', product: 'Shiny Bundle', value: 29.90, status: 'pending' },
-  { id: '3', player: 'BrazilGamer', product: 'Coins Pack 1000', value: 19.90, status: 'approved' },
-  { id: '4', player: 'PokeTrainer2024', product: 'VIP Diamond', value: 99.90, status: 'approved' },
-  { id: '5', player: 'MasterCatcher', product: 'Rare Pokémon', value: 39.90, status: 'pending' },
-];
-
-const stats = [
-  {
-    title: 'Vendas Totais',
-    value: 'R$ 12.450',
-    change: '+12.5%',
-    isPositive: true,
-    icon: DollarSign,
-    color: 'bg-green-500',
-  },
-  {
-    title: 'Pedidos',
-    value: '156',
-    change: '+8.2%',
-    isPositive: true,
-    icon: ShoppingCart,
-    color: 'bg-blue-500',
-  },
-  {
-    title: 'Produtos',
-    value: '24',
-    change: '+2',
-    isPositive: true,
-    icon: Package,
-    color: 'bg-purple-500',
-  },
-  {
-    title: 'Clientes',
-    value: '89',
-    change: '-3.1%',
-    isPositive: false,
-    icon: Users,
-    color: 'bg-orange-500',
-  },
-];
+interface DashboardStats {
+  totalSales: number;
+  totalOrders: number;
+  totalProducts: number;
+  totalCustomers: number;
+  salesByMonth: Array<{ name: string; vendas: number }>;
+  recentOrders: Order[];
+}
 
 export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    setIsLoading(true);
+    try {
+      // Fetch all orders
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (ordersError) {
+        console.error('Error fetching orders:', ordersError);
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch products count
+      const { count: productCount, error: productError } = await supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true });
+
+      if (productError) {
+        console.error('Error fetching products count:', productError);
+      }
+
+      // Calculate stats from real data
+      const approvedOrders = ((orders as Order[]) || []).filter(o => o.status === 'approved');
+      const totalSales = approvedOrders.reduce((sum, order) => sum + order.total, 0);
+      const totalOrders = approvedOrders.length;
+      const uniqueCustomers = new Set(approvedOrders.map(o => o.email)).size;
+
+      // Group sales by month
+      const salesByMonth = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date();
+        date.setMonth(date.getMonth() - (6 - i));
+        const monthName = date.toLocaleString('pt-BR', { month: 'short' });
+        const month = date.getMonth();
+        const year = date.getFullYear();
+
+        const monthSales = approvedOrders
+          .filter(o => {
+            const oDate = new Date(o.created_at);
+            return oDate.getMonth() === month && oDate.getFullYear() === year;
+          })
+          .reduce((sum, o) => sum + o.total, 0);
+
+        return {
+          name: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+          vendas: Math.round(monthSales * 100) / 100,
+        };
+      });
+
+      const recentOrders = approvedOrders.slice(0, 5);
+
+      setStats({
+        totalSales,
+        totalOrders,
+        totalProducts: productCount || 0,
+        totalCustomers: uniqueCustomers,
+        salesByMonth,
+        recentOrders,
+      });
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading || !stats) {
+    return (
+      <div className="space-y-8 animate-pulse">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-gray-200 rounded-2xl h-32" />
+          ))}
+        </div>
+        <div className="bg-gray-200 rounded-2xl h-96" />
+      </div>
+    );
+  }
+
+  const statsData = [
+    {
+      title: 'Vendas Totais',
+      value: `R$ ${stats.totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      change: stats.totalOrders > 0 ? `+${stats.totalOrders} pedidos` : 'Sem vendas',
+      isPositive: stats.totalOrders > 0,
+      icon: DollarSign,
+      color: 'bg-green-500',
+    },
+    {
+      title: 'Pedidos Aprovados',
+      value: stats.totalOrders.toString(),
+      change: stats.totalOrders > 0 ? '+' + stats.totalOrders : 'Nenhum',
+      isPositive: stats.totalOrders > 0,
+      icon: ShoppingCart,
+      color: 'bg-blue-500',
+    },
+    {
+      title: 'Produtos',
+      value: stats.totalProducts.toString(),
+      change: stats.totalProducts > 0 ? '+' + stats.totalProducts : 'Adicione produtos',
+      isPositive: true,
+      icon: Package,
+      color: 'bg-purple-500',
+    },
+    {
+      title: 'Clientes',
+      value: stats.totalCustomers.toString(),
+      change: stats.totalCustomers > 0 ? '+' + stats.totalCustomers : 'Sem clientes',
+      isPositive: stats.totalCustomers > 0,
+      icon: Users,
+      color: 'bg-orange-500',
+    },
+  ];
+
   return (
     <div className="space-y-8">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => (
+        {statsData.map((stat, index) => (
           <motion.div
             key={stat.title}
             initial={{ opacity: 0, y: 20 }}
@@ -130,9 +211,9 @@ export default function DashboardPage() {
               <span className="font-semibold">+23%</span>
             </div>
           </div>
-          <div className="h-64">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={salesData}>
+              <AreaChart data={stats.salesByMonth}>
                 <defs>
                   <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#009C3B" stopOpacity={0.3} />
@@ -171,13 +252,13 @@ export default function DashboardPage() {
         >
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="text-lg font-bold text-gray-900">Vendas por Período</h3>
-              <p className="text-gray-500 text-sm">Comparativo mensal</p>
+              <h3 className="text-lg font-bold text-gray-900">Análise de Vendas</h3>
+              <p className="text-gray-500 text-sm">Por período</p>
             </div>
           </div>
-          <div className="h-64">
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesData}>
+              <BarChart data={stats.salesByMonth}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="name" stroke="#9ca3af" />
                 <YAxis stroke="#9ca3af" />
@@ -201,56 +282,52 @@ export default function DashboardPage() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
-        className="bg-white rounded-2xl shadow-soft overflow-hidden"
+        className="bg-white rounded-2xl p-6 shadow-soft"
       >
-        <div className="p-6 border-b">
-          <h3 className="text-lg font-bold text-gray-900">Pedidos Recentes</h3>
-          <p className="text-gray-500 text-sm">Últimas transações</p>
+        <div className="mb-6">
+          <h3 className="text-lg font-bold text-gray-900">Últimos Pedidos</h3>
+          <p className="text-gray-500 text-sm">Pedidos aprovados recentemente</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Player
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Produto
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Valor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {recentOrders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="font-medium text-gray-900">{order.player}</span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                    {order.product}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">
-                    R$ {order.value.toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium
-                      ${order.status === 'approved'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                      {order.status === 'approved' ? 'Aprovado' : 'Pendente'}
-                    </span>
-                  </td>
+
+        {stats.recentOrders.length === 0 ? (
+          <div className="text-center py-8">
+            <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500">Nenhum pedido aprovado ainda</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Cliente</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Email</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Valor</th>
+                  <th className="text-center py-3 px-4 font-semibold text-gray-700">Status</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Data</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {stats.recentOrders.map((order) => (
+                  <tr key={order.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
+                    <td className="py-4 px-4 text-gray-900 font-medium">{order.player_nickname}</td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">{order.email}</td>
+                    <td className="py-4 px-4 text-right font-semibold text-green-600">
+                      R$ {order.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-4 px-4 text-center">
+                      <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">
+                        Aprovado
+                      </span>
+                    </td>
+                    <td className="py-4 px-4 text-gray-600 text-sm">
+                      {new Date(order.created_at).toLocaleDateString('pt-BR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </motion.div>
     </div>
   );

@@ -9,7 +9,8 @@ import {
   Settings,
   ShoppingCart,
   LogOut,
-  Store
+  Store,
+  Gavel
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
@@ -19,6 +20,7 @@ const menuItems = [
   { href: '/admin/products', label: 'Produtos', icon: Package },
   { href: '/admin/categories', label: 'Categorias', icon: FolderTree },
   { href: '/admin/orders', label: 'Pedidos', icon: ShoppingCart },
+  { href: '/admin/rules', label: 'Regras', icon: Gavel },
   { href: '/admin/settings', label: 'Configurações', icon: Settings },
 ];
 

@@ -19,19 +19,24 @@ interface CheckoutRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('[CHECKOUT] Starting checkout process...');
+    
     const body: CheckoutRequest = await request.json();
     const { items, player_nickname, email } = body;
 
     // Validate request
     if (!items || items.length === 0) {
+      console.error('[CHECKOUT] Validation failed: No items in cart');
       return NextResponse.json({ error: 'No items in cart' }, { status: 400 });
     }
 
     if (!player_nickname?.trim()) {
+      console.error('[CHECKOUT] Validation failed: Player nickname is required');
       return NextResponse.json({ error: 'Player nickname is required' }, { status: 400 });
     }
 
     if (!email?.trim()) {
+      console.error('[CHECKOUT] Validation failed: Email is required');
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
 
@@ -40,6 +45,8 @@ export async function POST(request: NextRequest) {
       (sum, item) => sum + item.price * item.quantity,
       0
     );
+
+    console.log(`[CHECKOUT] Order details - Items: ${items.length}, Total: ${total}, Email: ${email}`);
 
     const supabase = createServerClient();
 
@@ -57,11 +64,15 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (orderError || !order) {
-      console.error('Failed to create order:', orderError);
-      return NextResponse.json({ error: 'Failed to create order' }, { status: 500 });
+      console.error('[CHECKOUT] Failed to create order in database:', orderError);
+      return NextResponse.json(
+        { error: 'Failed to create order', details: orderError?.message },
+        { status: 500 }
+      );
     }
 
     const orderId = (order as { id: string }).id;
+    console.log(`[CHECKOUT] Order created successfully - Order ID: ${orderId}`);
 
     // Create order items
     const orderItems = items.map((item) => ({
@@ -78,19 +89,27 @@ export async function POST(request: NextRequest) {
       .insert(orderItems as never);
 
     if (itemsError) {
-      console.error('Failed to create order items:', itemsError);
+      console.error('[CHECKOUT] Failed to create order items:', itemsError);
       // Rollback order
       await supabase.from('orders').delete().eq('id', orderId);
-      return NextResponse.json({ error: 'Failed to create order items' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to create order items', details: itemsError?.message },
+        { status: 500 }
+      );
     }
+
+    console.log(`[CHECKOUT] Order items created - Count: ${orderItems.length}`);
 
     // Create Mercado Pago payment
     const mpAccessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     if (!mpAccessToken) {
-      console.error('Missing Mercado Pago access token');
-      return NextResponse.json({ error: 'Payment configuration error' }, { status: 500 });
+      console.error('[CHECKOUT] Missing Mercado Pago access token - Check environment variables');
+      return NextResponse.json(
+        { error: 'Payment configuration error', details: 'Missing API token' },
+        { status: 500 }
+      );
     }
 
     // Create payment preference
@@ -118,6 +137,8 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    console.log(`[CHECKOUT] Creating Mercado Pago preference - Order ID: ${orderId}`);
+
     const mpResponse = await fetch(
       'https://api.mercadopago.com/checkout/preferences',
       {
@@ -132,17 +153,32 @@ export async function POST(request: NextRequest) {
 
     if (!mpResponse.ok) {
       const error = await mpResponse.text();
-      console.error('Mercado Pago error:', error);
-      return NextResponse.json({ error: 'Failed to create payment' }, { status: 500 });
+      console.error(
+        '[CHECKOUT] Mercado Pago API error:',
+        `Status: ${mpResponse.status}`,
+        `Response: ${error}`
+      );
+      return NextResponse.json(
+        { error: 'Failed to create payment', details: 'Mercado Pago API error' },
+        { status: 500 }
+      );
     }
 
     const mpData = await mpResponse.json();
+    console.log(`[CHECKOUT] Mercado Pago preference created - Preference ID: ${mpData.id}`);
 
     // Update order with payment ID
-    await supabase
+    const { error: updateError } = await supabase
       .from('orders')
       .update({ payment_id: mpData.id } as never)
       .eq('id', orderId);
+
+    if (updateError) {
+      console.error('[CHECKOUT] Failed to update order with payment ID:', updateError);
+      // Don't fail here, the payment preference was created
+    }
+
+    console.log('[CHECKOUT] Checkout process completed successfully');
 
     return NextResponse.json({
       order_id: orderId,
@@ -150,7 +186,14 @@ export async function POST(request: NextRequest) {
       sandbox_init_point: mpData.sandbox_init_point, // Sandbox URL for testing
     });
   } catch (error) {
-    console.error('Checkout error:', error);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    console.error(
+      '[CHECKOUT] Unexpected error during checkout:',
+      error instanceof Error ? error.message : String(error),
+      error instanceof Error ? error.stack : ''
+    );
+    return NextResponse.json(
+      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
   }
 }

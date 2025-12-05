@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS products (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Add active column if it doesn't exist
+ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
+
 -- Orders Table
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -51,14 +54,16 @@ CREATE TABLE IF NOT EXISTS order_items (
 -- Store Settings Table
 CREATE TABLE IF NOT EXISTS store_settings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    store_name VARCHAR(100) DEFAULT 'BrasiLândia Store',
-    logo_url TEXT,
-    primary_green VARCHAR(7) DEFAULT '#009C3B',
-    primary_blue VARCHAR(7) DEFAULT '#002776',
-    primary_yellow VARCHAR(7) DEFAULT '#FFDF00',
-    background_color VARCHAR(7) DEFAULT '#F5F5F7',
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add missing columns if they don't exist (one by one to avoid conflicts)
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS store_name VARCHAR(100);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS primary_green VARCHAR(7);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS primary_blue VARCHAR(7);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS primary_yellow VARCHAR(7);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE;
 
 -- Admin Whitelist Table
 CREATE TABLE IF NOT EXISTS admin_whitelist (
@@ -74,19 +79,40 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 
--- Insert default store settings
-INSERT INTO store_settings (store_name, logo_url, primary_green, primary_blue, primary_yellow, background_color)
-VALUES ('BrasiLândia Store', '', '#009C3B', '#002776', '#FFDF00', '#F5F5F7')
-ON CONFLICT DO NOTHING;
+-- Set all existing products as active
+UPDATE products SET active = true WHERE active IS NULL;
+
+-- Update store settings with default values (first record only)
+UPDATE store_settings SET 
+    store_name = 'BrasiLândia Store',
+    logo_url = '',
+    primary_green = '#009C3B',
+    primary_blue = '#002776',
+    primary_yellow = '#FFDF00',
+    updated_at = NOW()
+WHERE id = (SELECT id FROM store_settings ORDER BY id LIMIT 1);
 
 -- Sample categories (optional)
-INSERT INTO categories (name, slug, icon) VALUES
-    ('VIPs', 'vips', '👑'),
-    ('Itens', 'itens', '🎁'),
-    ('Pokémons', 'pokemons', '🐉'),
-    ('Cosméticos', 'cosmeticos', '✨'),
-    ('Moedas', 'moedas', '🪙')
-ON CONFLICT (slug) DO NOTHING;
+-- Just insert, if slug already exists it will error but that's ok - categories already setup
+INSERT INTO categories (name, slug, icon) 
+SELECT 'VIPs', 'vips', '👑'
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE slug = 'vips');
+
+INSERT INTO categories (name, slug, icon) 
+SELECT 'Itens', 'itens', '🎁'
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE slug = 'itens');
+
+INSERT INTO categories (name, slug, icon) 
+SELECT 'Pokémons', 'pokemons', '🐉'
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE slug = 'pokemons');
+
+INSERT INTO categories (name, slug, icon) 
+SELECT 'Cosméticos', 'cosmeticos', '✨'
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE slug = 'cosmeticos');
+
+INSERT INTO categories (name, slug, icon) 
+SELECT 'Moedas', 'moedas', '🪙'
+WHERE NOT EXISTS (SELECT 1 FROM categories WHERE slug = 'moedas');
 
 -- RLS (Row Level Security) Policies
 -- Enable RLS
@@ -115,16 +141,75 @@ CREATE POLICY "Anyone can create order items" ON order_items
     FOR INSERT WITH CHECK (true);
 
 -- Admin policies (requires auth.uid() to be in admin_whitelist)
-CREATE POLICY "Admins can do everything with products" ON products
-    FOR ALL USING (
+-- Products - Admins can do everything
+CREATE POLICY "Admins can insert products" ON products
+    FOR INSERT WITH CHECK (
         EXISTS (
             SELECT 1 FROM admin_whitelist
             WHERE email = auth.jwt() ->> 'email'
         )
     );
 
-CREATE POLICY "Admins can do everything with categories" ON categories
-    FOR ALL USING (
+CREATE POLICY "Admins can update products" ON products
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+CREATE POLICY "Admins can delete products" ON products
+    FOR DELETE USING (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+-- Categories - Admins can do everything
+CREATE POLICY "Admins can insert categories" ON categories
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+CREATE POLICY "Admins can update categories" ON categories
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+CREATE POLICY "Admins can delete categories" ON categories
+    FOR DELETE USING (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+-- Store Settings - Admins can do everything
+CREATE POLICY "Admins can insert settings" ON store_settings
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+CREATE POLICY "Admins can update settings" ON store_settings
+    FOR UPDATE USING (
+        EXISTS (
+            SELECT 1 FROM admin_whitelist
+            WHERE email = auth.jwt() ->> 'email'
+        )
+    );
+
+CREATE POLICY "Admins can delete settings" ON store_settings
+    FOR DELETE USING (
         EXISTS (
             SELECT 1 FROM admin_whitelist
             WHERE email = auth.jwt() ->> 'email'
@@ -149,14 +234,6 @@ CREATE POLICY "Admins can update orders" ON orders
 
 CREATE POLICY "Admins can view order items" ON order_items
     FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admin_whitelist
-            WHERE email = auth.jwt() ->> 'email'
-        )
-    );
-
-CREATE POLICY "Admins can manage settings" ON store_settings
-    FOR ALL USING (
         EXISTS (
             SELECT 1 FROM admin_whitelist
             WHERE email = auth.jwt() ->> 'email'

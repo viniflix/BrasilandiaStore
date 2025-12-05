@@ -381,7 +381,7 @@ export default function ProductsPage() {
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={formData.active}
+              checked={formData.active || false}
               onChange={(e) => setFormData((p) => ({ ...p, active: e.target.checked }))}
               className="w-5 h-5 rounded border-gray-300 text-brazil-green focus:ring-brazil-green"
             />

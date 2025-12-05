@@ -1,22 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Loader2 } from 'lucide-react';
 
-interface AuthGuardProps {
+interface ProtectedLayoutProps {
   children: React.ReactNode;
 }
 
-export function AuthGuard({ children }: AuthGuardProps) {
+export function AdminProtectedLayout({ children }: ProtectedLayoutProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const { user, isAdmin, loading, checkAuth } = useAuthStore();
   const [checked, setChecked] = useState(false);
-
-  // Se estiver na página de login, não precisa de proteção
-  const isLoginPage = pathname === '/admin' || pathname === '/admin/';
 
   useEffect(() => {
     const verify = async () => {
@@ -27,22 +23,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
   }, [checkAuth]);
 
   useEffect(() => {
-    if (checked && !loading && !isLoginPage) {
-      if (!user) {
+    if (checked && !loading) {
+      if (!user || !isAdmin) {
         router.push('/admin');
-      } else if (!isAdmin) {
-        router.push('/admin?error=unauthorized');
       }
     }
-  }, [checked, loading, user, isAdmin, isLoginPage, router]);
+  }, [checked, loading, user, isAdmin, router]);
 
-  // Se for página de login, renderiza normalmente
-  if (isLoginPage) {
-    return <>{children}</>;
-  }
-
-  // Para outras páginas, mostra loading enquanto verifica
-  if (loading || !checked) {
+  if (loading || !checked || !user || !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -51,11 +39,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
         </div>
       </div>
     );
-  }
-
-  // Se não está autenticado ou não é admin, não renderiza
-  if (!user || !isAdmin) {
-    return null;
   }
 
   return <>{children}</>;

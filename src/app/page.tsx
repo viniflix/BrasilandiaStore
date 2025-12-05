@@ -1,15 +1,16 @@
 import { Navbar } from '@/components/store/Navbar';
-import { Hero } from '@/components/store/Hero';
-import { ProductGrid } from '@/components/store/ProductGrid';
+import { HeroServerInfo, TopSellingProducts } from '@/components/store/HomeHero';
+import { WidgetsSection } from '@/components/store/HomeNew';
 import { Footer } from '@/components/store/Footer';
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
       <main className="flex-1">
-        <Hero />
-        <ProductGrid />
+        <HeroServerInfo />
+        <TopSellingProducts />
+        <WidgetsSection />
       </main>
       <Footer />
     </div>

@@ -6,11 +6,16 @@ import { Save, Palette, Store, Key, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { supabase } from '@/lib/supabase';
+import WidgetSystem from '@/components/admin/WidgetSystem';
+import { AVAILABLE_WIDGETS } from '@/components/admin/Widgets';
+import { ServerSettingsForm } from '@/components/admin/ServerSettingsForm';
 import type { StoreSettings } from '@/types/database';
+import type { Widget } from '@/components/admin/WidgetSystem';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<StoreSettings | null>(null);
+  const [widgets, setWidgets] = useState<Widget[]>(AVAILABLE_WIDGETS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -20,12 +25,30 @@ export default function SettingsPage() {
     primary_green: '#009C3B',
     primary_blue: '#002776',
     primary_yellow: '#FFDF00',
-    background_color: '#F5F5F7',
   });
 
   useEffect(() => {
     fetchSettings();
+    loadWidgets();
   }, []);
+
+  const loadWidgets = async () => {
+    // In the future, load from database
+    // For now, use default widgets
+    setWidgets(AVAILABLE_WIDGETS);
+  };
+
+  const handleToggleWidget = (widgetId: string) => {
+    setWidgets(
+      widgets.map((w) =>
+        w.id === widgetId ? { ...w, enabled: !w.enabled } : w
+      )
+    );
+  };
+
+  const handleReorderWidgets = (reorderedWidgets: Widget[]) => {
+    setWidgets(reorderedWidgets);
+  };
 
   const fetchSettings = async () => {
     setIsLoading(true);
@@ -47,7 +70,6 @@ export default function SettingsPage() {
         primary_green: settingsData.primary_green,
         primary_blue: settingsData.primary_blue,
         primary_yellow: settingsData.primary_yellow,
-        background_color: settingsData.background_color,
       });
     }
     setIsLoading(false);
@@ -96,7 +118,6 @@ export default function SettingsPage() {
       primary_green: '#009C3B',
       primary_blue: '#002776',
       primary_yellow: '#FFDF00',
-      background_color: '#F5F5F7',
     });
     toast.info('Valores restaurados para o padrão');
   };
@@ -112,6 +133,21 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
+      {/* Server Configuration Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-2xl p-6 shadow-soft"
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-green-600/10 rounded-xl">
+            <Store className="w-5 h-5 text-green-600" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">Configurações do Servidor</h3>
+        </div>
+        <ServerSettingsForm />
+      </motion.div>
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Store Info */}
         <motion.div
@@ -232,31 +268,10 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-
-            {/* Background */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cor de Fundo
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="color"
-                  value={formData.background_color}
-                  onChange={(e) => setFormData((p) => ({ ...p, background_color: e.target.value }))}
-                  className="w-12 h-10 rounded-lg border cursor-pointer"
-                />
-                <input
-                  type="text"
-                  value={formData.background_color}
-                  onChange={(e) => setFormData((p) => ({ ...p, background_color: e.target.value }))}
-                  className="flex-1 px-4 py-2 rounded-xl border border-gray-300 font-mono text-sm"
-                />
-              </div>
-            </div>
           </div>
 
           {/* Color Preview */}
-          <div className="mt-6 p-4 rounded-xl" style={{ backgroundColor: formData.background_color }}>
+          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
             <p className="text-sm text-gray-500 mb-2">Pré-visualização das cores:</p>
             <div className="flex gap-2">
               <div
@@ -296,6 +311,21 @@ export default function SettingsPage() {
               por questões de segurança.
             </p>
           </div>
+        </motion.div>
+
+        {/* Widgets System */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="bg-white rounded-2xl p-6 shadow-soft"
+        >
+          <h3 className="text-lg font-bold text-gray-900 mb-6">Widgets da Vitrine</h3>
+          <WidgetSystem
+            widgets={widgets}
+            onToggleWidget={handleToggleWidget}
+            onReorderWidgets={handleReorderWidgets}
+          />
         </motion.div>
 
         {/* Actions */}

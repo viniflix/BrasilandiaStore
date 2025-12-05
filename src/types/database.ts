@@ -82,7 +82,6 @@ export interface StoreSettings {
   primary_green: string;
   primary_blue: string;
   primary_yellow: string;
-  background_color: string;
   updated_at: string;
 }
 
